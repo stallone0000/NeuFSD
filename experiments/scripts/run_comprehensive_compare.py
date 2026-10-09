@@ -83,33 +83,37 @@ DATASETS = {
     },
 }
 
-FINAL_E5 = ROOT / "mainonly_runs_20260623" / "sliding_fullstack_online" / "fourdataset_s2000" / "final_e5"
-OURS_CANDIDATES = {
-    "caida2016": [
-        FINAL_E5 / "selective_gate_caida2016_hmed0p50_scale1p08" / "caida_2016_avg5_selective_window_metrics.csv",
-        FINAL_E5 / "caida2016_avg5_e5_s2000_newpre" / "window_metrics.csv",
-    ],
-    "caida2018": [
-        FINAL_E5 / "caida2018_avg5_e5_s2000_newpre" / "window_metrics.csv",
-    ],
-    "imc": [
-        FINAL_E5 / "imc_avg5_e5_s2000_newpre_imcdefault" / "window_metrics.csv",
-        FINAL_E5 / "imc_avg5_e5_s2000_newpre" / "window_metrics.csv",
-    ],
-    "mawi": [
-        FINAL_E5 / "mawi_gate_w0p30_20260628" / "mawi_avg5_w0p30" / "window_metrics.csv",
-        FINAL_E5 / "mawi_avg5_e5_s2000_newpre" / "window_metrics.csv",
-    ],
+METRIC_COLUMNS = {
+    "raw": ("mrd", "wmrd"),
+    "residual": ("gate_mrd", "gate_wmrd"),
+    "twoway": ("twoway_gate_mrd", "twoway_gate_wmrd"),
+    "sample_shape": ("sample_shape_mrd", "sample_shape_wmrd"),
+    "adaptive": ("adaptive_mrd", "adaptive_wmrd"),
+    "selective": ("selective_mrd", "selective_wmrd"),
 }
 
-METRIC_PAIRS = [
-    ("selective_mrd", "selective_wmrd", "selective"),
-    ("sample_shape_mrd", "sample_shape_wmrd", "sample_shape"),
-    ("twoway_gate_mrd", "twoway_gate_wmrd", "twoway"),
-    ("gate_mrd", "gate_wmrd", "residual"),
-    ("adaptive_mrd", "adaptive_wmrd", "adaptive"),
-    ("mrd", "wmrd", "raw"),
-]
+
+def add_ours_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ours-results", nargs="+", required=True, metavar="TRACE=CSV")
+    parser.add_argument("--ours-metric", choices=tuple(METRIC_COLUMNS), required=True)
+
+
+def parse_ours_results(items: list[str]) -> dict[str, Path]:
+    paths = {}
+    aliases = {"caida_2016": "caida2016", "caida_2018": "caida2018"}
+    for item in items:
+        trace, separator, value = item.partition("=")
+        trace = aliases.get(trace, trace)
+        if not separator or not value or trace not in DATASETS or trace in paths:
+            raise ValueError(f"Expected one TRACE=CSV per trace, got {item!r}")
+        path = Path(value).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        paths[trace] = path
+    missing = set(DATASETS) - paths.keys()
+    if missing:
+        raise ValueError(f"Missing --ours-results for {', '.join(sorted(missing))}")
+    return paths
 
 
 def run(cmd: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
@@ -437,25 +441,26 @@ def write_baseline_csv(run_root: Path) -> pd.DataFrame:
     return df
 
 
-def load_ours(trace: str) -> tuple[pd.DataFrame, str, Path]:
-    best: tuple[float, pd.DataFrame, str, Path, str, str] | None = None
-    for path in OURS_CANDIDATES[trace]:
-        if not path.exists():
-            continue
-        df = pd.read_csv(path)
-        for mrd_col, wmrd_col, name in METRIC_PAIRS:
-            if mrd_col in df.columns and wmrd_col in df.columns:
-                mean_w = float(pd.to_numeric(df[wmrd_col], errors="coerce").mean())
-                if best is None or mean_w < best[0]:
-                    best = (mean_w, df.copy(), name, path, mrd_col, wmrd_col)
-    if best is None:
-        raise FileNotFoundError(f"No NeuFSD metrics found for {trace}")
-    _, df, name, path, mrd_col, wmrd_col = best
+def load_ours(trace: str, path: Path, metric: str) -> tuple[pd.DataFrame, str, Path]:
+    if metric not in METRIC_COLUMNS:
+        raise ValueError(f"Unknown NeuFSD metric: {metric}")
+    path = Path(path).resolve()
+    mrd_col, wmrd_col = METRIC_COLUMNS[metric]
+    df = pd.read_csv(path)
+    required = {"minute", mrd_col, wmrd_col}
+    if df.empty or not required.issubset(df.columns):
+        raise ValueError(f"{trace}: {path} requires nonempty columns {sorted(required)}")
     out = df[["minute", mrd_col, wmrd_col]].copy()
     out.columns = ["minute", "mrd", "wmrd"]
+    out = out.apply(pd.to_numeric, errors="raise")
+    if not np.isfinite(out.to_numpy(dtype=float)).all() or (out < 0).any().any():
+        raise ValueError(f"{trace}: selected result columns must be finite and nonnegative")
+    if (out["minute"] != np.floor(out["minute"])).any() or out["minute"].duplicated().any():
+        raise ValueError(f"{trace}: window indices must be unique integers")
+    out["minute"] = out["minute"].astype(int)
     out["algorithm"] = "NeuFSD"
     out["memory_kb"] = 16
-    return out, name, path
+    return out, metric, path
 
 
 def measure_forward_time(run_root: Path, force: bool = False) -> dict[str, Any]:
@@ -906,8 +911,16 @@ def main() -> None:
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--skip-run", action="store_true", help="Only collect and plot existing result JSON files.")
     ap.add_argument("--skip-plots", action="store_true")
+    add_ours_arguments(ap)
     args = ap.parse_args()
     args.run_root = args.run_root.resolve()
+    result_paths = parse_ours_results(args.ours_results)
+    ours_cache: dict[str, pd.DataFrame] = {}
+    chosen: dict[str, tuple[str, Path]] = {}
+    for trace, path in result_paths.items():
+        ours, metric, src = load_ours(trace, path, args.ours_metric)
+        ours_cache[trace] = ours
+        chosen[trace] = (metric, src)
 
     args.run_root.mkdir(parents=True, exist_ok=True)
     traces = list(DATASETS)
@@ -935,12 +948,6 @@ def main() -> None:
         raise RuntimeError("No baseline results collected")
     timing = measure_forward_time(args.run_root, force=args.force)
 
-    ours_cache: dict[str, pd.DataFrame] = {}
-    chosen: dict[str, tuple[str, Path]] = {}
-    for trace in traces:
-        ours, opt_name, src = load_ours(trace)
-        ours_cache[trace] = ours
-        chosen[trace] = (opt_name, src)
     write_ours_detail(args.run_root, ours_cache, chosen)
     write_summary(args.run_root, df, ours_cache, sweep_windows, time_windows, timing)
 

@@ -222,26 +222,30 @@ Use `--help` on the fixed-root runner for its `--train-root` and
 `--train-minutes` arguments. It freezes weights after one update;
 `--init-from scratch` alone still performs continuous adaptation.
 
-## 4. Current-window IMC configuration
+## 4. Preceding-window IMC configuration
 
-This path adapts on current-block sampled labels, then decodes the same block,
-reloading the prior each time. It is separate from preceding-block prediction.
+For window t, this path reloads the prior and adapts only on sampled labels
+from window t−1, then decodes window t. Current-window sample-shape mixing is
+disabled. The entry-point filename is retained for command compatibility.
 
 ```bash
 python3 scripts/run_imc_current_oracle.py \
   --run-root "$NEUFSD_RUN" --trace imc --res 64_64 \
-  --data-full-root "$NEUFSD_DATA" --out-dir "$NEUFSD_WORK/imc-current" \
+  --data-full-root "$NEUFSD_DATA" --out-dir "$NEUFSD_WORK/imc-previous" \
   --sample-cache-dir "$NEUFSD_WORK/sample-imc-q0p5" \
-  --runtime-train-cache-dir "$NEUFSD_WORK/imc-current-cache" \
+  --runtime-train-cache-dir "$NEUFSD_WORK/imc-previous-cache" \
   --pretrained-root "$NEUFSD_PRIOR" \
   --start-minute 5 --end-minute "$NEUFSD_LAST_WINDOW" --epochs 20 --batch-size 256 --lr 0.01 \
   --holdout-frac 0.1 --sample-rate 0.5 --sample-seed 42 --torch-seed 42 \
-  --start-seed 0 --end-seed 2000 --current-replicas 1 --phi 100 --input-mode raw \
+  --start-seed 0 --end-seed 2000 --train-replicas 1 --phi 100 --input-mode raw \
   --gate-threshold 1.02 --gate-cap 1.20 --gate-down-threshold 0.98 --gate-floor 0.70 \
-  --sample-shape-weight 0.5 --sample-shape-max-freq 100
+  --sample-shape-weight 0
 ```
 
 Set `NEUFSD_LAST_WINDOW` for the IMC capture before running this configuration.
+The starting window must be at least 1. Use fresh output and training-cache
+directories; outputs with another protocol are not resumed. Metrics record
+`train_source_minute` separately from synthetic replica IDs in `train_minutes`.
 Residual calibration reads each window's actual packet count from its raw
 record file; retain those files and pass the matching `--data-full-root` to
 online runners and performance sweeps.
@@ -282,7 +286,11 @@ DATA_FULL_ROOT="$NEUFSD_DATA" RUN_ROOT="$NEUFSD_WORK/independent" \
 The short baseline wrapper defaults to block 10; it is not a full-trace
 aggregate benchmark. Its collector reads NeuFSD accuracy and timing from
 `RUN_ROOT`; absent measurements stay blank. The comprehensive runner supplies
-additional sweep logic. Use identical block ranges and metric definitions
+additional sweep logic. Both comprehensive plotting entry points require
+`--ours-results caida2016=/path/a.csv caida2018=/path/b.csv imc=/path/c.csv mawi=/path/d.csv`
+and `--ours-metric raw` (or a specified calibration metric). Fix these inputs
+before evaluating; no CSV or metric is selected by its measured WMRD.
+Use identical block ranges and metric definitions
 for substantive comparisons. Plotting scripts have specific input naming
 conventions; their path helpers document the required layout.
 

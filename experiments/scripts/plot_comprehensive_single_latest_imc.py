@@ -119,22 +119,11 @@ def summarize(values: pd.Series | np.ndarray) -> tuple[float, float, float]:
     return float(np.mean(vals)), float(np.min(vals)), float(np.max(vals))
 
 
-def load_ours_latest(run_root: Path) -> tuple[dict[str, pd.DataFrame], dict[str, tuple[str, Path]]]:
-    latest_imc = (
-        comp.ROOT
-        / "mainonly_runs_20260623"
-        / "imc_current_oracle_20260630"
-        / "p50_s2000_e20_full"
-        / "window_metrics.csv"
-    )
-    if latest_imc.exists():
-        comp.OURS_CANDIDATES["imc"] = [latest_imc] + [
-            p for p in comp.OURS_CANDIDATES["imc"] if p != latest_imc
-        ]
+def load_ours_results(result_paths: dict[str, Path], metric: str) -> tuple[dict[str, pd.DataFrame], dict[str, tuple[str, Path]]]:
     ours_cache: dict[str, pd.DataFrame] = {}
     chosen: dict[str, tuple[str, Path]] = {}
     for trace in comp.DATASETS:
-        ours, opt_name, src = comp.load_ours(trace)
+        ours, opt_name, src = comp.load_ours(trace, result_paths[trace], metric)
         ours_cache[trace] = ours
         chosen[trace] = (opt_name, src)
     return ours_cache, chosen
@@ -466,7 +455,10 @@ def main() -> None:
     ap.add_argument("--sweep-windows", type=int, default=10)
     ap.add_argument("--time-windows", type=int, default=100)
     ap.add_argument("--out-dir", type=Path, default=None)
+    comp.add_ours_arguments(ap)
     args = ap.parse_args()
+    result_paths = comp.parse_ours_results(args.ours_results)
+    ours_cache, chosen = load_ours_results(result_paths, args.ours_metric)
     run_root = args.run_root.resolve()
     plot_dir = args.out_dir.resolve() if args.out_dir else run_root / "plots_single_latest_imc"
     plot_dir.mkdir(parents=True, exist_ok=True)
@@ -475,7 +467,6 @@ def main() -> None:
     df = pd.read_csv(run_root / "baseline_detail.csv")
     sweep = windows(args.start_minute, args.sweep_windows)
     time = windows(args.start_minute, args.time_windows)
-    ours_cache, chosen = load_ours_latest(run_root)
     timing = load_timing(run_root)
 
     draw_legend(plot_dir)

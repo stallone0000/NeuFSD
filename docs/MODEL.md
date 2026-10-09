@@ -68,9 +68,9 @@ The table specifies the runnable configurations in the reproduction guide.
 Command-line values and the explicit environment settings in that guide
 override script defaults.
 
-| Setting | Primary synthetic-only pretraining | History-based Avg-5 SFT | Current-window IMC | Alternative mixed-data pretraining |
+| Setting | Primary synthetic-only pretraining | History-based Avg-5 SFT | Preceding-window IMC | Alternative mixed-data pretraining |
 |---|---|---|---|---|
-| Source distributions | 60 Zipf datasets | Five preceding sampled FSDs | Current sampled FSD | 60 Zipf datasets + first 8 windows of each of four traces |
+| Source distributions | 60 Zipf datasets | Five preceding sampled FSDs | Preceding window's sampled FSD | 60 Zipf datasets + first 8 windows of each of four traces |
 | Candidates per network | 24,000 | 2,000/update | 2,000/window | 36,800 |
 | Training / validation | 21,600 / 2,400 | 1,800 / 200 | 1,800 / 200 | 29,600 / 7,200 |
 | Split | Last 3 datasets of each of two synthetic roots | Random 10% example holdout | Random 10% example holdout | Last 3 datasets of each of six roots |
@@ -141,9 +141,10 @@ For matched 2,000-example updates:
 - Window-5: five preceding FSDs separately, 400 seeds each.
 - Avg-5: their average on the union of sizes, five replicas × 400 seeds.
 
-History-based adaptation uses preceding blocks. Current-window IMC training
-and nonzero sample-shape mixing use same-block information and must be
-identified separately.
+History-based adaptation uses preceding windows. The separate IMC runner
+reloads the prior, adapts on window t−1, and decodes window t. It disables
+current-window sample-shape mixing. Current-window truth is used only for
+scoring; training replicas all come from the preceding sampled FSD.
 
 For each counter seed, the evaluator combines small and heavy predictions,
 rounds bins, clips negatives, and scores on its loaded truth support. WMRD is
