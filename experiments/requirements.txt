@@ -1,0 +1,16 @@
+# Tested with Python 3.12.
+# Install a torch/torchvision wheel that matches your CUDA version, for example:
+#   pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128
+# Then install the remaining dependencies:
+#   pip install -r requirements.txt
+#
+# The main pipeline does not require pretrained checkpoints.
+# timm is used only for the ViT module; the version is pinned for API stability.
+timm==1.0.15
+torchsummary
+numpy==2.2.6
+scipy==1.15.2
+scikit-learn==1.6.1
+pandas==2.2.3
+matplotlib
+tqdm

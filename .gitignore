@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Native build outputs
+build/
+bin/
+*.o
+*.so
+*.a
+*.out
+
+# Datasets and packet traces
+*.dat
+*.pcap
+*.pcapng
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+experiments/data_full/
+
+# Model/checkpoint/counter artifacts
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.bin
+*.memmap
+
+# Generated experiment outputs
+*.csv
+*.u4
+experiments/reference/
+experiments/neufsd-run.*/
+experiments/run_tools/
+experiments/run/
+experiments/results/
+experiments/mainonly_runs_*/
+experiments/compare/*/data/
+experiments/compare/*/*.csv
+experiments/compare/*/*.txt
+experiments/compare/*/*.pdf
+experiments/compare/*/*.png
+experiments/compare/*/traditional_sample
+experiments/compare/*/bin/
+experiments/compare/*/build/
+
+# Logs and figures
+*.log
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.svg
+
+# OS/editor noise
+.DS_Store
+*.swp
+*~
